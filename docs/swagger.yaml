@@ -12,6 +12,50 @@ servers:
     description: Local server
 
 paths:
+  /games:
+    post:
+      tags:
+        - new-game
+      summary: Creates a game
+      description: Creates a new game
+      operationId: createGame
+
+      requestBody:
+        description: A new game to be created
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/new-game'
+            example:
+              name: Tetris
+              price: 0.99
+
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URL of the created game
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/new-game'
+              example:
+                name: Tetris
+                price: 0.99
+
+        '400':
+          description: One or all params are missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example:
+                error: One or all params are missing
+
   /games/{id}:
     get:
       summary: Get game by ID
@@ -22,18 +66,35 @@ paths:
           required: true
           schema:
             type: integer
+
       responses:
         '200':
           description: Response for status 200
+
         '404':
           description: Response for status 404
 
 components:
   schemas:
+    new-game:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Tetris
+        price:
+          type: number
+          format: float
+          example: 0.99
+      required:
+        - name
+        - price
+
     error:
       type: object
       properties:
         error:
           type: string
+          example: One or all params are missing
       required:
         - error
