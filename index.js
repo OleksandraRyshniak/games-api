@@ -18,10 +18,7 @@ const games = [
     {id: 8, name: "Forza Horizon 5", price: 59.99}
 ]
 app.get('/games', (req, res) => {
-   if (typeof games[req.params.id - 1] === 'undefined'){
-    return res.status(404).send({error: 'Game not found.'})
-    }
-    res.send(["Witcher 3", "Cyberpunk 2077"])
+    res.status(200).send(games)
 })
 
 app.get('/games/:id', (req, res) => {
@@ -46,6 +43,18 @@ app.post('/games', (req, res) => {
         .location(`${getBaseUrl(req)}/games/${games.length}`)
         .send(game)
 })
+
+
+app.delete('/games/:id', (req, res) => {
+    if (typeof games[req.params.id - 1] === 'undefined') {
+        return res.status(404).send({error: "Game not found"})
+    }
+
+    games.splice(req.params.id - 1, 1)
+
+    res.status(204).send({error: "No content"})
+})
+
 
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument))
 

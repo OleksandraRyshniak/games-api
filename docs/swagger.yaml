@@ -74,6 +74,45 @@ paths:
         '404':
           description: Response for status 404
 
+    delete:
+      tags:
+        - delete-game
+      summary: Deletes a game
+      description: Deletes an existing game by ID
+      operationId: deleteGame
+
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the game to delete
+          schema:
+            type: integer
+            example: 1
+
+      requestBody:
+        description: Game to be deleted
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/delete-game'
+            example:
+              id: 1
+
+      responses:
+        '204':
+          description: No Content
+
+        '404':
+          description: Game not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example:
+                error: Game not found
+
 components:
   schemas:
     new-game:
@@ -89,6 +128,15 @@ components:
       required:
         - name
         - price
+
+    delete-game:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+      required:
+        - id
 
     error:
       type: object
