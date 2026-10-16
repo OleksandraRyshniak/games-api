@@ -111,6 +111,59 @@ paths:
               example:
                 error: Game not found
 
+    put:
+      tags:
+        - Games
+      summary: Updates a game
+      description: Updates name and price of an existing game
+      operationId: updateGame
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the game to update
+          schema:
+            type: integer
+            example: 1
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/new-game'
+            example:
+              name: Tetris
+              price: 1.99
+
+      responses:
+        '200':
+          description: Game updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/game'
+
+        '400':
+          description: One or all params are missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example:
+                error: One or all params are missing
+
+        '404':
+          description: Game not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example:
+                error: Game not found
+
+
+
     delete:
       tags:
         - Games
