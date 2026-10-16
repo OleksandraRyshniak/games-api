@@ -17,22 +17,31 @@ const games = [
     {id: 7, name: "Valorant", price: 0},
     {id: 8, name: "Forza Horizon 5", price: 59.99}
 ]
+
+let nextId = Math.max(...games.map(g => g.id)) + 1
+
 app.get('/games', (req, res) => {
     res.status(200).send(games)
 })
 
 app.get('/games/:id', (req, res) => {
-    res.send(games[req.params.id-1])
+    const game = games.find(g => g.id === Number(req.params.id))
+
+    if (!game) {
+        return res.status(404).send({ error: "Game not found" })
+    }
+
+    res.send(game)
 })
 
 
 app.post('/games', (req, res) => {
-    if (!req.body.name || !req.body.price) {
+    if (!req.body.name || req.body.price === undefined) {
         return res.status(400).send({ error: 'One or all params are missing' })
     }
 
     let game = {
-        id: games.length + 1,
+        id: nextId++,
         price: req.body.price,
         name: req.body.name
     }
@@ -40,21 +49,21 @@ app.post('/games', (req, res) => {
     games.push(game)
 
     res.status(201)
-        .location(`${getBaseUrl(req)}/games/${games.length}`)
+        .location(`${getBaseUrl(req)}/games/${game.id}`)
         .send(game)
 })
 
-
 app.delete('/games/:id', (req, res) => {
-    if (typeof games[req.params.id - 1] === 'undefined') {
-        return res.status(404).send({error: "Game not found"})
+    const index = games.findIndex(g => g.id === Number(req.params.id))
+
+    if (index === -1) {
+        return res.status(404).send({ error: "Game not found" })
     }
 
-    games.splice(req.params.id - 1, 1)
+    games.splice(index, 1)
 
-    res.status(204).send({error: "No content"})
+    res.status(204).send()
 })
-
 
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument))
 
