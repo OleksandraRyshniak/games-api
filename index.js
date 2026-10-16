@@ -20,6 +20,14 @@ const games = [
 
 let nextId = Math.max(...games.map(g => g.id)) + 1
 
+app.get('/games/summary', (req, res) => {
+    res.status(200).send({
+        total: games.length,
+        totalPrice: Number(games.reduce((sum, g) => sum + g.price, 0).toFixed(2)),
+        games: games
+    })
+})
+
 app.get('/games', (req, res) => {
     res.status(200).send(games)
 })
