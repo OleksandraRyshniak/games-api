@@ -47,11 +47,16 @@ app.post('/games', (req, res) => {
     if (!req.body.name || req.body.price === undefined) {
         return res.status(400).send({ error: 'One or all params are missing' })
     }
+    const name = req.body.name.trim()
+
+    if (games.some(g => g.name.toLowerCase() === name.toLowerCase())) {
+        return res.status(409).send({ error: 'Game with this name already exists' })
+    }
 
     let game = {
         id: nextId++,
-        price: req.body.price,
-        name: req.body.name
+        name: req.body.name,
+        price: req.body.price
     }
 
     games.push(game)
