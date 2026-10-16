@@ -1,10 +1,17 @@
+
 openapi: 3.0.0
 
 info:
   title: Games API
   version: 1.0.0
   description: |
-    This is a Swagger UI for our Games API.
+    Games API with role-based access.
+
+    Guest: View games.
+    User: View and create games.
+    Admin: View, create, update and delete games.
+
+    Use the login form above Swagger to sign in.
 
 servers:
   - url: http://localhost:8080
@@ -16,9 +23,10 @@ paths:
       tags:
         - Games
       summary: Get all games
-      description: Returns the list of all games
+      description: Returns all games (public)
       operationId: getGames
-
+      security:
+        - basicAuth: [ ]
       responses:
         '200':
           description: List of games
@@ -33,12 +41,13 @@ paths:
       tags:
         - Games
       summary: Creates a game
-      description: Creates a new game
+      description: Creates a new game (user, admin)
       operationId: createGame
-
+      security:
+        - basicAuth: []
       requestBody:
-        description: A new game to be created
         required: true
+        description: A new game to be created
         content:
           application/json:
             schema:
@@ -46,7 +55,6 @@ paths:
             example:
               name: Tetris
               price: 0.99
-
       responses:
         '201':
           description: Created
@@ -63,37 +71,27 @@ paths:
                 id: 9
                 name: Tetris
                 price: 0.99
-
         '400':
-          description: One or all params are missing
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/error'
-              example:
-                error: One or all params are missing
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
-          description: Game with this name already exists
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/error'
-              example:
-                error: Game with this name already exists
+          $ref: '#/components/responses/Conflict'
 
   /games/{id}:
     get:
       tags:
         - Games
       summary: Get game by ID
-      operationId: getGameById
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
+      description: Returns one game (public)
 
+      operationId: getGameById
+      security:
+        - basicAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/GameId'
       responses:
         '200':
           description: Game found
@@ -101,31 +99,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/game'
-
         '404':
-          description: Game not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/error'
-              example:
-                error: Game not found
+          $ref: '#/components/responses/NotFound'
 
     put:
       tags:
         - Games
       summary: Updates a game
-      description: Updates name and price of an existing game
+      description: Updates an existing game (admin only)
       operationId: updateGame
+      security:
+        - basicAuth: []
       parameters:
-        - name: id
-          in: path
-          required: true
-          description: ID of the game to update
-          schema:
-            type: integer
-            example: 1
-
+        - $ref: '#/components/parameters/GameId'
       requestBody:
         required: true
         content:
@@ -135,7 +121,6 @@ paths:
             example:
               name: Tetris
               price: 1.99
-
       responses:
         '200':
           description: Game updated
@@ -143,57 +128,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/game'
-
         '400':
-          description: One or all params are missing
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/error'
-              example:
-                error: One or all params are missing
-
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
-          description: Game not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/error'
-              example:
-                error: Game not found
-
-
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
     delete:
       tags:
         - Games
       summary: Deletes a game
-      description: Deletes an existing game by ID
+      description: Deletes a game by ID (admin only)
       operationId: deleteGame
-
+      security:
+        - basicAuth: []
       parameters:
-        - name: id
-          in: path
-          required: true
-          description: ID of the game to delete
-          schema:
-            type: integer
-            example: 1
-
+        - $ref: '#/components/parameters/GameId'
       responses:
         '204':
           description: No Content
-
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
-          description: Game not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/error'
-              example:
-                error: Game not found
+          $ref: '#/components/responses/NotFound'
+
+
 
 components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: Username and password authentication
+
+  parameters:
+    GameId:
+      name: id
+      in: path
+      required: true
+      description: ID of the game
+      schema:
+        type: integer
+        example: 1
+
   schemas:
     game:
       type: object
@@ -211,6 +195,9 @@ components:
 
     new-game:
       type: object
+      required:
+        - name
+        - price
       properties:
         name:
           type: string
@@ -218,16 +205,60 @@ components:
         price:
           type: number
           format: float
+          minimum: 0
           example: 0.99
-      required:
-        - name
-        - price
 
     error:
       type: object
+      required:
+        - error
       properties:
         error:
           type: string
-          example: One or all params are missing
-      required:
-        - error
+          example: Game not found
+
+  responses:
+    BadRequest:
+      description: Invalid or missing name or price
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/error'
+          example:
+            error: Invalid or missing name or price
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/error'
+          example:
+            error: Authentication required
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/error'
+          example:
+            error: Forbidden
+
+    NotFound:
+      description: Game not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/error'
+          example:
+            error: Game not found
+
+    Conflict:
+      description: Game with this name already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/error'
+          example:
+            error: Game with this name already exists
