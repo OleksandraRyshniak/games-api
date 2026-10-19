@@ -97,6 +97,12 @@ function auth(roles) {
 app.post('/login', (req, res) => {
     const { username, password } = req.body || {};
 
+    if (typeof username !== 'string' || typeof password !== 'string') {
+        return res.status(401).json({
+            error: 'Invalid username or password'
+        });
+    }
+
     const user = users.find(u =>
         u.username === username &&
         u.password === password
@@ -110,18 +116,10 @@ app.post('/login', (req, res) => {
 
     const token = crypto.randomBytes(32).toString('hex');
 
-    sessions.set(token, {
-        username: user.username,
-        role: user.role
-    });
+    sessions.set(token, { username: user.username, role: user.role });
 
-    res.json({
-        token,
-        username: user.username,
-        role: user.role
-    });
+    res.json({ token, username: user.username, role: user.role });
 });
-
 app.post('/logout', (req, res) => {
     const header = req.headers.authorization || '';
 
@@ -282,234 +280,132 @@ app.get('/docs/swagger.json', (req, res) => {
 });
 
 
-
 const customJs = `
 (function () {
     let token = null;
-    let currentRole = 'guest';
+    let busy = false;
+    let statusText = 'Guest';
 
     function getSwaggerUI() {
         return window.ui;
     }
 
-function refreshSwagger() {
-    const ui = getSwaggerUI();
+    function installInterceptor() {
+        const ui = getSwaggerUI();
+        if (!ui) return;
 
-    if (!ui) return;
+        ui.getConfigs().requestInterceptor = function (req) {
+            req.headers = req.headers || {};
 
-    installInterceptor();
-
-    ui.specActions.updateUrl('/docs/swagger.json');
-    ui.specActions.download('/docs/swagger.json');
-}
-
-    
-function installInterceptor() {
-    const ui = getSwaggerUI();
-
-    if (!ui) return;
-
-    ui.getConfigs().requestInterceptor = function (req) {
-        req.headers = req.headers || {};
-
-        if (token) {
-            req.headers.Authorization = 'Bearer ' + token;
-        } else {
-            delete req.headers.Authorization;
-            delete req.headers.authorization;
-        }
-
-        return req;
-    };
-}
-
-    async function login() {
-        const username =
-            document.getElementById('loginUsername').value;
-
-        const password =
-            document.getElementById('loginPassword').value;
-
-        const status =
-            document.getElementById('loginStatus');
-
-        try {
-            const response = await fetch('/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    username,
-                    password
-                })
-            });
-
-            if (!response.ok) {
-                status.textContent = 'Invalid username or password';
-                return;
+            if (token) {
+                req.headers.Authorization = 'Bearer ' + token;
+            } else {
+                delete req.headers.Authorization;
+                delete req.headers.authorization;
             }
 
-            const data = await response.json();
-
-            token = data.token;
-            currentRole = data.role;
-
-            document.getElementById('loginPassword').value = '';
-
-            status.textContent =
-                'Logged in as ' + data.username +
-                ' (' + currentRole + ')';
-
-            installInterceptor();
-            refreshSwagger();
-        } catch (error) {
-            status.textContent = 'Login failed';
-        }
+            return req;
+        };
     }
 
-    async function logout() {
-        const oldToken = token;
+    function refreshSwagger() {
+        const ui = getSwaggerUI();
+        if (!ui) return;
 
-        token = null;
-        currentRole = 'guest';
+        installInterceptor();
+        ui.specActions.updateUrl('/docs/swagger.json');
+        ui.specActions.download('/docs/swagger.json');
+    }
 
-        if (oldToken) {
+    function showStatus() {
+        const wrapper = document.querySelector('.auth-wrapper');
+        if (!wrapper) return;
+
+        let span = document.getElementById('loginStatus');
+
+        if (!span) {
+            span = document.createElement('span');
+            span.id = 'loginStatus';
+            span.style.cssText = 'margin-right:12px;font-weight:bold;';
+            wrapper.insertBefore(span, wrapper.firstChild);
+        }
+
+        span.textContent = statusText;
+    }
+
+    async function checkAuth() {
+        const ui = getSwaggerUI();
+
+        if (!ui || !ui.authSelectors || busy) return;
+
+        const authorized = ui.authSelectors.authorized();
+        const basic = authorized && authorized.get('basicAuth');
+
+        // Пользователь ввёл данные в окне Authorize
+        if (basic && !token) {
+            busy = true;
+
+            try {
+                const creds = basic.toJS().value || {};
+
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: creds.username,
+                        password: creds.password
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+
+                    token = data.token;
+                    statusText = 'Logged in as ' + data.username + ' (' + data.role + ')';
+
+                    installInterceptor();
+                    refreshSwagger();
+                } else {
+                    ui.authActions.logout(['basicAuth']);
+                    statusText = 'Guest';
+                    alert('Invalid username or password');
+                }
+            } catch (error) {
+                ui.authActions.logout(['basicAuth']);
+                statusText = 'Guest';
+            }
+
+            busy = false;
+        }
+
+       
+        if (!basic && token) {
+            busy = true;
+
+            const oldToken = token;
+            token = null;
+            statusText = 'Guest';
+
             try {
                 await fetch('/logout', {
                     method: 'POST',
-                    headers: {
-                        Authorization: 'Bearer ' + oldToken
-                    }
+                    headers: { Authorization: 'Bearer ' + oldToken }
                 });
             } catch (error) {
                 console.error(error);
             }
+
+            refreshSwagger();
+            busy = false;
         }
 
-        const ui = getSwaggerUI();
-
-        if (ui) {
-            ui.authActions.logout(['basicAuth']);
-        }
-
-        installInterceptor();
-
-        document.getElementById('loginPassword').value = '';
-        document.getElementById('loginStatus').textContent = 'Guest';
-
-        refreshSwagger();
+        showStatus();
     }
 
-    function initialize() {
-        const panel = document.createElement('div');
-
-        panel.style.cssText =
-            'padding:18px;background:#f3f3f3;' +
-            'display:flex;gap:10px;align-items:center;' +
-            'flex-wrap:wrap;font-family:Arial';
-
-        panel.innerHTML = \`
-            <strong>Games API Login</strong>
-            <input id="loginUsername"
-                   placeholder="Username"
-                   autocomplete="username">
-            <input id="loginPassword"
-                   type="password"
-                   placeholder="Password"
-                   autocomplete="current-password">
-            <button id="loginButton">Login</button>
-            <button id="logoutButton">Logout</button>
-            <span id="loginStatus">Guest</span>
-        \`;
-
-
-panel.querySelectorAll('input').forEach(input => {
-    input.style.cssText = \`
-        width: 115px;
-        padding: 7px;
-        border: 1px solid #aaa;
-        border-radius: 4px;
-    \`;
-});
-
-panel.querySelectorAll('button').forEach(button => {
-    button.style.cssText = \`
-        padding: 7px 12px;
-        border: 1px solid #49cc90;
-        border-radius: 4px;
-        background: white;
-        color: #249c67;
-        cursor: pointer;
-        font-weight: bold;
-    \`;
-});
-
-        
-const placeLoginPanel = () => {
-    const authorizeWrapper = document.querySelector('.auth-wrapper');
-
-    if (!authorizeWrapper) {
-        return false;
-    }
-
-    const authorizeButton = authorizeWrapper.querySelector('.authorize');
-
-    if (authorizeButton) {
-        authorizeButton.style.display = 'none';
-    }
-
-    authorizeWrapper.appendChild(panel);
-
-    panel.style.cssText = \`
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 8px;
-        flex-wrap: wrap;
-        padding: 0;
-        background: transparent;
-        font-family: Arial, sans-serif;
-    \`;
-
-    return true;
-};
-
-if (!placeLoginPanel()) {
-    const panelInterval = setInterval(() => {
-        if (placeLoginPanel()) {
-            clearInterval(panelInterval);
-        }
-    }, 100);
-}
-
-
-        document.getElementById('loginButton')
-            .addEventListener('click', login);
-
-        document.getElementById('logoutButton')
-            .addEventListener('click', logout);
-
-        document.getElementById('loginPassword')
-            .addEventListener('keydown', function (event) {
-                if (event.key === 'Enter') login();
-            });
-
-        const interval = setInterval(function () {
-            if (getSwaggerUI()) {
-                clearInterval(interval);
-                installInterceptor();
-            }
-        }, 100);
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initialize);
-    } else {
-        initialize();
-    }
+    setInterval(checkAuth, 300);
 })();
 `;
+
 
 app.use(
     '/docs',
@@ -519,10 +415,22 @@ app.use(
             url: '/docs/swagger.json',
             persistAuthorization: false
         },
+        customCss: `
+            .swagger-ui .dialog-ux .modal-ux-header h3 { font-size: 0; }
+            .swagger-ui .dialog-ux .modal-ux-header h3::before {
+                content: 'Sign in';
+                font-size: 24px;
+            }
+
+            .swagger-ui .dialog-ux .modal-ux-content h4 { font-size: 0; }
+            .swagger-ui .dialog-ux .modal-ux-content h4::before {
+                content: 'Games API account';
+                font-size: 20px;
+            }
+        `,
         customJsStr: customJs
     })
 );
-
 
 
 app.listen(port, () => {

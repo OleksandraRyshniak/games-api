@@ -11,7 +11,7 @@ info:
     User: View and create games.
     Admin: View, create, update and delete games.
 
-    Use the login form above Swagger to sign in.
+    Click Authorize to sign in.
 
 servers:
   - url: http://localhost:8080
@@ -25,8 +25,7 @@ paths:
       summary: Get all games
       description: Returns all games (public)
       operationId: getGames
-      security:
-        - basicAuth: [ ]
+
       responses:
         '200':
           description: List of games
@@ -88,8 +87,7 @@ paths:
       description: Returns one game (public)
 
       operationId: getGameById
-      security:
-        - basicAuth: [ ]
+
       parameters:
         - $ref: '#/components/parameters/GameId'
       responses:
@@ -166,7 +164,7 @@ components:
     basicAuth:
       type: http
       scheme: basic
-      description: Username and password authentication
+      description: Enter your username and password
 
   parameters:
     GameId:
@@ -191,7 +189,7 @@ components:
         price:
           type: number
           format: float
-          example: 29.99
+          example: 29.99а
 
     new-game:
       type: object
