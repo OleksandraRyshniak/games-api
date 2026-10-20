@@ -3,6 +3,9 @@ const express = require('express');
 const swaggerUi = require('swagger-ui-express');
 const yamljs = require('yamljs');
 const crypto = require('crypto');
+require('dotenv').config();
+const mongoose = require('mongoose');
+const game = require('./models/game');
 
 const app = express();
 const port = 8080;
@@ -130,7 +133,6 @@ app.post('/logout', (req, res) => {
     res.status(204).send();
 });
 
-
 app.get('/games/summary', (req, res) => {
     res.status(200).json({
         total: games.length,
@@ -140,10 +142,15 @@ app.get('/games/summary', (req, res) => {
         games: games
     });
 });
-
-
-app.get('/games', (req, res) => {
-    res.status(200).json(games);
+app.get('/games', async (req, res) => {
+    try {
+        const games = await game.find({}, { _id: 0, __v: 0 });
+        res.status(200).json(games);
+    } catch (error) {
+        res.status(500).json({
+            error: 'Database error'
+        });
+    }
 });
 
 
@@ -439,9 +446,22 @@ app.use(
 
 
 
-app.listen(port, () => {
-    console.log(`API up at: http://localhost:${port}`);
-});
+async function startServer() {
+    try {
+        await mongoose.connect(process.env.MONGODB_URI);
+
+        console.log('MongoDB Atlas connected');
+
+        app.listen(port, () => {
+            console.log(`API up at: http://localhost:${port}`);
+        });
+    } catch (error) {
+        console.error('MongoDB connection failed:', error.message);
+        process.exit(1);
+    }
+}
+
+startServer();
 
 
 
