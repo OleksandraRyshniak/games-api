@@ -407,6 +407,7 @@ const customJs = `
 `;
 
 
+
 app.use(
     '/docs',
     swaggerUi.serve,
@@ -427,15 +428,19 @@ app.use(
                 content: 'Games API account';
                 font-size: 20px;
             }
+
+            .swagger-ui .authorization__btn {
+                display: none !important;
+            }
         `,
         customJsStr: customJs
     })
 );
 
 
+
 app.listen(port, () => {
     console.log(`API up at: http://localhost:${port}`);
-    console.log(`Swagger: http://localhost:${port}/docs`);
 });
 
 
