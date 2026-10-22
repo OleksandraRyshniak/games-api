@@ -14,21 +14,6 @@ const swaggerDocument = yamljs.load('./docs/swagger.yaml');
 
 app.use(express.json());
 
-
-
-const games = [
-    { id: 1, name: "Witcher 3", price: 29.99 },
-    { id: 2, name: "Cyberpunk 2077", price: 59.99 },
-    { id: 3, name: "Minecraft", price: 26.99 },
-    { id: 4, name: "Counter-Strike: Global Offensive", price: 0 },
-    { id: 5, name: "Roblox", price: 0 },
-    { id: 6, name: "Grand Theft Auto V", price: 29.99 },
-    { id: 7, name: "Valorant", price: 0 },
-    { id: 8, name: "Forza Horizon 5", price: 59.99 }
-];
-
-let nextId = Math.max(...games.map(g => g.id)) + 1;
-
 const users = [
     { username: 'user', password: 'user123', role: 'user' },
     { username: 'admin', password: 'admin123', role: 'admin' }
@@ -133,15 +118,33 @@ app.post('/logout', (req, res) => {
     res.status(204).send();
 });
 
-app.get('/games/summary', (req, res) => {
-    res.status(200).json({
-        total: games.length,
-        totalPrice: Number(
-            games.reduce((sum, g) => sum + g.price, 0).toFixed(2)
-        ),
-        games: games
-    });
+
+app.get('/games/summary', async (req, res) => {
+    try {
+        const games = await game.find();
+
+        const totalGames = games.length;
+
+        const totalPrice = games.reduce(
+            (sum, g) => sum + g.price, 0
+        );
+
+        const averagePrice = totalGames > 0
+            ? totalPrice / totalGames
+            : 0;
+
+        res.status(200).json({
+            totalGames,
+            averagePrice: Number(averagePrice.toFixed(2))
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            error: 'Database error'
+        });
+    }
 });
+
 app.get('/games', async (req, res) => {
     try {
         const games = await game.find({}, { _id: 0, __v: 0 });
@@ -153,117 +156,175 @@ app.get('/games', async (req, res) => {
     }
 });
 
+app.get('/games/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
 
-app.get('/games/:id', (req, res) => {
-    const game = games.find(g =>
-        g.id === Number(req.params.id)
-    );
+        if (!Number.isSafeInteger(id) || id < 1) {
+            return res.status(400).json({
+                error: 'Invalid game ID'
+            });
+        }
 
-    if (!game) {
-        return res.status(404).json({
-            error: 'Game not found'
+        const foundGame = await game.findOne(
+            { id: id },
+            { _id: 0, __v: 0 }
+        );
+
+        if (!foundGame) {
+            return res.status(404).json({
+                error: 'Game not found'
+            });
+        }
+
+        res.status(200).json(foundGame);
+    } catch (error) {
+        res.status(500).json({
+            error: 'Database error'
         });
     }
+});
 
-    res.status(200).json(game);
+app.post('/games', auth(['user', 'admin']), async (req, res) => {
+    try {
+        const { name, price } = req.body || {};
+
+        if (
+            typeof name !== 'string' ||
+            !name.trim() ||
+            typeof price !== 'number' ||
+            !Number.isFinite(price) ||
+            price < 0
+        ) {
+            return res.status(400).json({
+                error: 'Invalid or missing name or price'
+            });
+        }
+
+        const cleanName = name.trim();
+
+        const existingGame = await game.findOne({
+            name: cleanName
+        }).collation({ locale: 'en', strength: 2 });
+
+        if (existingGame) {
+            return res.status(409).json({
+                error: 'Game with this name already exists'
+            });
+        }
+
+        const lastGame = await game.findOne().sort({ id: -1 });
+        const nextGameId = lastGame ? lastGame.id + 1 : 1;
+
+        const newGame = await game.create({
+            id: nextGameId,
+            name: cleanName,
+            price: price
+        });
+
+        res.status(201)
+            .location(`${getBaseUrl(req)}/games/${newGame.id}`)
+            .json({
+                id: newGame.id,
+                name: newGame.name,
+                price: newGame.price
+            });
+
+    } catch (error) {
+        if (error.code === 11000) {
+            return res.status(409).json({
+                error: 'Game with this name or ID already exists'
+            });
+        }
+
+        res.status(500).json({
+            error: 'Database error'
+        });
+    }
 });
 
 
-app.post('/games', auth(['user', 'admin']), (req, res) => {
-    const { name, price } = req.body || {};
+app.put('/games/:id', auth(['admin']), async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const { name, price } = req.body || {};
 
-    if (
-        typeof name !== 'string' ||
-        !name.trim() ||
-        typeof price !== 'number' ||
-        !Number.isFinite(price) ||
-        price < 0
-    ) {
-        return res.status(400).json({
-            error: 'Invalid or missing name or price'
+        if (!Number.isSafeInteger(id) || id < 1) {
+            return res.status(400).json({
+                error: 'Invalid game ID'
+            });
+        }
+
+        if (
+            typeof name !== 'string' ||
+            !name.trim() ||
+            typeof price !== 'number' ||
+            !Number.isFinite(price) ||
+            price < 0
+        ) {
+            return res.status(400).json({
+                error: 'Invalid or missing name or price'
+            });
+        }
+
+        const existingGame = await game.findOne({ id });
+
+        if (!existingGame) {
+            return res.status(404).json({
+                error: 'Game not found'
+            });
+        }
+
+        existingGame.name = name.trim();
+        existingGame.price = price;
+
+        await existingGame.save();
+
+        res.status(200).json({
+            id: existingGame.id,
+            name: existingGame.name,
+            price: existingGame.price
+        });
+
+    } catch (error) {
+        if (error.code === 11000) {
+            return res.status(409).json({
+                error: 'Game with this name already exists'
+            });
+        }
+
+        res.status(500).json({
+            error: 'Database error'
         });
     }
-
-    const cleanName = name.trim();
-
-    if (games.some(g =>
-        g.name.toLowerCase() === cleanName.toLowerCase()
-    )) {
-        return res.status(409).json({
-            error: 'Game with this name already exists'
-        });
-    }
-
-    const game = {
-        id: nextId++,
-        name: cleanName,
-        price: price
-    };
-
-    games.push(game);
-
-    res.status(201)
-        .location(`${getBaseUrl(req)}/games/${game.id}`)
-        .json(game);
 });
 
 
-app.put('/games/:id', auth(['admin']), (req, res) => {
-    const game = games.find(g =>
-        g.id === Number(req.params.id)
-    );
+app.delete('/games/:id', auth(['admin']), async (req, res) => {
+    try {
+        const id = Number(req.params.id);
 
-    if (!game) {
-        return res.status(404).json({
-            error: 'Game not found'
+        if (!Number.isSafeInteger(id) || id < 1) {
+            return res.status(400).json({
+                error: 'Invalid game ID'
+            });
+        }
+
+        const deletedGame = await game.findOneAndDelete({ id });
+
+        if (!deletedGame) {
+            return res.status(404).json({
+                error: 'Game not found'
+            });
+        }
+
+        res.status(204).send();
+
+    } catch (error) {
+        res.status(500).json({
+            error: 'Database error'
         });
     }
-
-    const { name, price } = req.body || {};
-
-    if (
-        typeof name !== 'string' ||
-        !name.trim() ||
-        typeof price !== 'number' ||
-        !Number.isFinite(price) ||
-        price < 0
-    ) {
-        return res.status(400).json({
-            error: 'Invalid or missing name or price'
-        });
-    }
-
-    const cleanName = name.trim();
-
-    if (games.some(g =>
-        g.id !== game.id &&
-        g.name.toLowerCase() === cleanName.toLowerCase()
-    )) {
-        return res.status(409).json({
-            error: 'Game with this name already exists'
-        });
-    }
-
-    game.name = cleanName;
-    game.price = price;
-
-    res.status(200).json(game);
-});
-
-
-app.delete('/games/:id', auth(['admin']), (req, res) => {
-    const index = games.findIndex(g =>
-        g.id === Number(req.params.id)
-    );
-
-    if (index === -1) {
-        return res.status(404).json({
-            error: 'Game not found'
-        });
-    }
-
-    games.splice(index, 1);
-    res.status(204).send();
 });
 
 
@@ -285,7 +346,6 @@ app.get('/docs/swagger.json', (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json(doc);
 });
-
 
 const customJs = `
 (function () {
@@ -412,8 +472,6 @@ const customJs = `
     setInterval(checkAuth, 300);
 })();
 `;
-
-
 
 app.use(
     '/docs',

@@ -51,9 +51,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/new-game'
-            example:
-              name: Tetris
-              price: 0.99
       responses:
         '201':
           description: Created
@@ -66,10 +63,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/game'
-              example:
-                id: 9
-                name: Tetris
-                price: 0.99
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -189,7 +182,7 @@ components:
         price:
           type: number
           format: float
-          example: 29.99а
+          example: 29.99
 
     new-game:
       type: object
