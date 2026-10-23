@@ -6,6 +6,8 @@ const crypto = require('crypto');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const game = require('./models/game');
+const User = require('./models/user');
+const bcrypt = require('bcryptjs');
 
 const app = express();
 const port = 8080;
@@ -14,15 +16,9 @@ const swaggerDocument = yamljs.load('./docs/swagger.yaml');
 
 app.use(express.json());
 
-const users = [
-    { username: 'user', password: 'user123', role: 'user' },
-    { username: 'admin', password: 'admin123', role: 'admin' }
-];
-
 const sessions = new Map();
 
-
-function getBasicUser(req) {
+async function getBasicUser(req) {
     const header = req.headers.authorization;
 
     if (!header || !header.startsWith('Basic ')) {
@@ -40,11 +36,23 @@ function getBasicUser(req) {
     const username = decoded.slice(0, separator);
     const password = decoded.slice(separator + 1);
 
-    return users.find(u =>
-        u.username === username &&
-        u.password === password
-    ) || null;
+    const foundUser = await User.findOne({ username });
+
+    if (!foundUser) return null;
+
+    const isValid = await bcrypt.compare(
+        password,
+        foundUser.passwordHash
+    );
+
+    if (!isValid) return null;
+
+    return {
+        username: foundUser.username,
+        role: foundUser.role
+    };
 }
+
 
 function getSessionUser(req) {
     const header = req.headers.authorization || '';
@@ -57,57 +65,96 @@ function getSessionUser(req) {
     return sessions.get(token) || null;
 }
 
-function getUser(req) {
-    return getSessionUser(req) || getBasicUser(req);
+async function getUser(req) {
+    return getSessionUser(req) || await getBasicUser(req);
 }
 
+
 function auth(roles) {
-    return (req, res, next) => {
-        const user = getUser(req);
+    return async (req, res, next) => {
+        try {
+            const currentUser = await getUser(req);
 
-        if (!user) {
-            return res.status(401).json({
-                error: 'Authentication required'
+            if (!currentUser) {
+                return res.status(401).json({
+                    error: 'Authentication required'
+                });
+            }
+
+            if (!roles.includes(currentUser.role)) {
+                return res.status(403).json({
+                    error: 'Forbidden'
+                });
+            }
+
+            req.user = currentUser;
+            next();
+
+        } catch (error) {
+            res.status(500).json({
+                error: 'Authentication error'
             });
         }
-
-        if (!roles.includes(user.role)) {
-            return res.status(403).json({
-                error: 'Forbidden'
-            });
-        }
-
-        req.user = user;
-        next();
     };
 }
 
-app.post('/login', (req, res) => {
-    const { username, password } = req.body || {};
 
-    if (typeof username !== 'string' || typeof password !== 'string') {
-        return res.status(401).json({
-            error: 'Invalid username or password'
+
+app.post('/login', async (req, res) => {
+    try {
+        const { username, password } = req.body || {};
+
+        if (
+            typeof username !== 'string' ||
+            typeof password !== 'string'
+        ) {
+            return res.status(401).json({
+                error: 'Invalid username or password'
+            });
+        }
+
+        const foundUser = await User.findOne({ username });
+
+        if (!foundUser) {
+            return res.status(401).json({
+                error: 'Invalid username or password'
+            });
+        }
+
+        const isValid = await bcrypt.compare(
+            password,
+            foundUser.passwordHash
+        );
+
+        if (!isValid) {
+            return res.status(401).json({
+                error: 'Invalid username or password'
+            });
+        }
+
+        const token = crypto.randomBytes(32).toString('hex');
+
+        sessions.set(token, {
+            username: foundUser.username,
+            role: foundUser.role
+        });
+
+        return res.json({
+            token,
+            username: foundUser.username,
+            role: foundUser.role
+        });
+
+    } catch (error) {
+        console.error('Login error:', error);
+
+        return res.status(500).json({
+            error: 'Authentication error'
         });
     }
-
-    const user = users.find(u =>
-        u.username === username &&
-        u.password === password
-    );
-
-    if (!user) {
-        return res.status(401).json({
-            error: 'Invalid username or password'
-        });
-    }
-
-    const token = crypto.randomBytes(32).toString('hex');
-
-    sessions.set(token, { username: user.username, role: user.role });
-
-    res.json({ token, username: user.username, role: user.role });
 });
+
+
 app.post('/logout', (req, res) => {
     const header = req.headers.authorization || '';
 
@@ -328,24 +375,33 @@ app.delete('/games/:id', auth(['admin']), async (req, res) => {
 });
 
 
-app.get('/docs/swagger.json', (req, res) => {
-    const user = getUser(req);
-    const role = user ? user.role : 'guest';
 
-    const doc = JSON.parse(JSON.stringify(swaggerDocument));
+app.get('/docs/swagger.json', async (req, res) => {
+    try {
+        const currentUser = await getUser(req);
+        const role = currentUser ? currentUser.role : 'guest';
 
-    if (role === 'guest') {
-        delete doc.paths['/games'].post;
-        delete doc.paths['/games/{id}'].put;
-        delete doc.paths['/games/{id}'].delete;
-    } else if (role === 'user') {
-        delete doc.paths['/games/{id}'].put;
-        delete doc.paths['/games/{id}'].delete;
+        const doc = JSON.parse(JSON.stringify(swaggerDocument));
+
+        if (role === 'guest') {
+            delete doc.paths['/games'].post;
+            delete doc.paths['/games/{id}'].put;
+            delete doc.paths['/games/{id}'].delete;
+        } else if (role === 'user') {
+            delete doc.paths['/games/{id}'].put;
+            delete doc.paths['/games/{id}'].delete;
+        }
+
+        res.set('Cache-Control', 'no-store');
+        res.json(doc);
+
+    } catch (error) {
+        res.status(500).json({
+            error: 'Authentication error'
+        });
     }
-
-    res.set('Cache-Control', 'no-store');
-    res.json(doc);
 });
+
 
 const customJs = `
 (function () {
